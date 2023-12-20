@@ -1,0 +1,890 @@
+---
+title: "Subway Insights: Demographics, COVID-19, and the Future of NYC Transit"
+author: "Group 6: Jeanie Liu, Kazuma Parkinson, and Jonathan Gotian"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+# omit warnings and center plots by default
+library(knitr)
+opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+               fig.align = "center",
+               out.width = "85%")
+
+#Installing necessary packages
+library(tidyverse) #includes stringr
+library(lubridate)
+library(purrr) #provides family of map functions that return different types of
+#output
+library(sf) #for shape files/mapping
+library(glmnet) #for ridge and lasso
+library(glue) #for functions, evaluating R code inside strings
+library(data.table)
+```
+
+# Preface
+We are a consulting firm whose client is New York City Metropolitan Transportation Authority (MTA). They have three areas of interest: (1) What are the current subway traffic patterns in NYC as a whole and across neighborhoods? How does demographics affect subway demand? Has demand been impacted by COVID? (2) What will the future demand for the subway be? Based on future demand, which stations and subway carts should New York City invest in for repairs? (3) New York City is also interested in building city-owned small convenient stores outside of subway stations as a way of generating revenue. They wonder: What type of stores should they build outside of different subway stations?
+
+# Executive Summary
+In order to best understand subway patterns, we must analyzed the subway turnstile data from New York City subway stations which capture the total amount of entrances and exits through the subway stations. We analyzed this data to understand the frequency to which people use New York City subway stations and how the MTA should best respond to this demand. Specifically, prior to COVID-19, subway use is found to be higher during Fall and Spring months than in Winter and Summer months. In the beginning months of the pandemic, subway use dramatically fell and has since has a slow but upwards trajectory. Lastly, it was found that on a station by station basis, the same stops (Union Sq, Columbus Circle, Herald Sq and Penn Station) all yielded among the top seven of highest entrances over the past five years.
+
+We then narrowed down our analysis to the neighborhood level. We identified 
+the top 10 neighborhoods for different demographic patterns to inform New York 
+City about where to invest in convenient stores and what offerings should the
+stores provide to satisfy consumer tastes. 
+
+We also tried to predict the median subway entries of each neighborhood with
+different demographic variables like household income, median rent, and 
+neighborhood population. We found that only neighborhood population is a 
+significant predictor, so New York City Subway should focus on neighborhoods
+with high populations like Flushing and Washington Heights in adding subway 
+stops or increasing maintenance. 
+
+Lastly, we focused on the impact of COVID-19 on subway traffic. We found that
+the COVID lockdown in March, 2020 significantly decreased the subway traffic,
+but it has been increasing steadily since the drop. To predict future subway 
+traffic, New York City Subway should seek variables besides covid cases as it 
+is a relatively poor predictor of subway entries.
+
+# Data
+The main dataset we are analyzing is "NYC_subway_traffic_2017-2021.csv ("https://www.kaggle.com/datasets/eddeng/nyc-subway-traffic-data-20172021?resource=download). This dataset provides data on the number of people who enter and exit each subway station through turnstiles at 4-hour intervals between 2017 and 2021. Within the above link, it also has NYC neighborhood census data of 2020. Examples of relevant metrics include percentage of car-free commute, neighborhood population, poverty rate, and percentages of different races. We could utilize this dataset to see how demographics affect subway traffic. The "Stations.csv" file further informs us about all the subway stations' locations, IDs, lines they belong to, and other related information. In addition, we also found a dataset on COVID: COVID-19 Daily Counts of Cases, Hospitalizations, and Deaths (https://data.cityofnewyork.us/Health/COVID-19-Daily-Counts-of-Cases-Hospitalizations-an/rc75-m7u3). This dataset provides daily counts of COVID cases, hospitalizations, and deaths since 2020/02/29 to now. At the time we downloaded the data, the last date with data was 2022/05/10.
+
+# Data Cleaning Process
+ 
+We merged our neighborhood census data with our subway traffic data. When doing this, our merged dataset kept 51 of our 59 neighborhoods. This is likely because 8 neighborhoods do not have subway stations. The subway traffic dataset did not contain Staten Island, but the subway stations dataset did. Due to this inconsistency, we removed Staten Island from our analyses. When examining the subway entry and exit data, we discovered significant differences between entries and exits. This was likely due to multiple ways of being able to exit the subway. We thus focused our analysis on factors which predict subway entries. One factor we considered was COVID. To analyze the potential impact, we merged our COVID dataset with the subway traffic data, joining by borough. This merged dataset only contained 4 of the 5 boroughs (not including Staten Island). 
+
+# Findings
+Our neighborhood analyses ranked neighborhoods by variables in the NYC neighborhood census data. These tables found in our report can provide NYC with information on how to optimally create potential convenience stores outside of subway stations. For example, if a neighiborhood has a larger elderly population, a potential convenience store in that neighborhood outside of a subway station may want to sell more newspapers. However, more research would have to be done on consumer behavior patterns by demographic characteristics for NYC to optimize potential economic gains from potential convenience stores. 
+
+We further found that neighborhood population is a strong predictor of median subway entries and exits in each neighborhood. Thus, New York City Subway could consider adding stops to neighborhoods with high population, such as Flushing/Whitestone, Jamaica/Hollis, and Washington Heights/Inwood. 
+
+The COVID-19 pandemic did significantly impact daily subway entries as entries ranged from 2 to 6 million daily pre-COVID, dropped to below 1 million by March of 2020, and never reached above 2 million entries even by July of 2021. This could be because COVID was still a concern for people at the time, and many international students and tourists remained out of the country. 
+
+Despite COVID's influence, we found that covid cases is not a significant predictor of total subway entries in NYC. While covid cases is a significant predictor of total subway entries at the borough level, it can only explain very small variation (less than 3%) of total subway entries. Thus, New York City Subway should look beyond Covid to predict future demands, such as tourism and immigration policies as the pandemic dies down.
+
+
+```{r}
+#Loading csv files to the environment
+subway_traffic <-read_csv("data/NYC_subway_traffic_2017-2021.csv")
+neighborhood_census <- read_csv("data/NYC_neighborhood_census_data_2020.csv")
+station_lookup <- read_csv("data/station_lookup.csv")
+stations <- read_csv("data/Stations.csv")
+covid <- read_csv("data/COVID19_Cases_NYC.csv")
+covid_by_boro <- 
+  read_csv("data/COVID-19_Daily_Counts_of_Cases__Hospitalizations__and_Deaths.csv")
+```
+
+
+\newpage
+## We mapped the subway stations by line.
+```{r}
+#Map of subway stations
+nyc <- read_sf("data/nybb_22a/nybb.shp") %>% 
+  filter(BoroCode < 5) #filters out Staten Island
+
+# convert stations data to the same crs as the nyc base map
+stations_map <- stations %>%
+  filter(Borough != "SI") %>% 
+  st_as_sf(coords = c("GTFS Longitude", "GTFS Latitude"), crs = 4326) %>%
+  st_transform(crs = st_crs(nyc)) # st_crs() gets the crs from the object nyc
+
+ggplot(data = nyc) +
+  geom_sf() + 
+  geom_sf(data = stations_map, 
+          aes(color = Line),
+          size = 0.35)+
+  scale_x_continuous(breaks = seq(-74.05, -73.70, 0.1)) +
+  guides(color = "none") +
+  labs(x = "Longitude", y = "Latitude", title = "Map of NYC Subway Stations by Line")
+
+############################################
+  
+stations %>% 
+    filter(Borough != "SI") %>% 
+    count(Borough) %>% 
+    mutate(Borough = ifelse(Borough == "Q", "Queens",
+                    ifelse(Borough == "M", "Manhattan",
+                    ifelse(Borough == "Bk", "Brooklyn",
+                    ifelse(Borough == "Bx", "Bronx", NA))))) %>% 
+  mutate(Percent = (n/sum(n))*100) %>% 
+  arrange(-n) %>% 
+    kable(format = "pipe",
+        padding = 10,
+        caption = paste('Total Number of Subway Stops by Borough'),
+        digits = 2,
+        col.names = c('Borough', 'Total Number of Stops', 'Percentage of Total Number of Stops'),#, glue('Total Entries in {input_year}')),
+        align = c('l', 'c'))
+```
+
+This is a map of all the subway stops in New York City, colored based the line that runs through each respective stop. Based on the attached table, is it apparent that a majority of stops are within Brooklyn and Manhattan.
+
+\newpage
+## We portrayed monthly subway entries and analyzed for trends.
+```{r}
+#Entries by month
+monthly_entries <- subway_traffic %>% 
+  mutate(Date = date(as.Date(Datetime)), Day = day(Date), Month = month(Date), Year = year(Date)) %>%
+  group_by(Year, Month) %>% 
+  mutate(Tot_Entries = sum(Entries)) %>%
+  mutate(max = max(Tot_Entries)) %>% 
+  filter(Date == min(Date)) %>% 
+  select(Date, Year,Month, max) %>% 
+  distinct()
+#Entries by month - line graph
+monthly_entries %>% 
+  ggplot(aes(x = Date, y = max)) +
+  geom_line() +
+  labs(x = NULL, y = "Total Monthly Entries", title = "Monthly Subway Entries")
+```
+This graph depicts the total entries of each subway station per month. This graph is especially important due to the steep decline of subway use in NYC during the COVID-19 pandemic. Lockdowns and social gathering restrictions required residents and commuters to remain at home. As a result, there was minimal subway use during this time period. However, prior to COVID-19,(approximately March 2020), there seems to indicate a pattern based on subway per month. 
+
+``` {r}
+#Seasonality
+subway_traffic %>% 
+  mutate(Date = date(as.Date(Datetime)), Day = day(Date), Month = month(Date), Year = year(Date)) %>%
+  mutate(Season = ifelse(Month == 12 | Month == 1 | Month == 2, "Winter (Dec, Jan, Feb)", 
+                  ifelse(Month == 3 | Month == 4 | Month == 5, "Spring (Mar, Apr, May)",
+                  ifelse(Month == 6 | Month == 7 | Month == 8, "Summer (Jun, Jul, Aug)",
+                  ifelse(Month == 9 | Month == 10 | Month == 11, "Fall (Sep, Oct, Nov)", "NA"))))) %>% 
+  group_by(Year, Month) %>% 
+  mutate(Tot_Entries = sum(Entries)) %>%
+  mutate(max = max(Tot_Entries)) %>% 
+  filter(Date == min(Date)) %>% 
+  select(Date, Year,Month, max, Season) %>% 
+  distinct() %>% 
+  filter(Date < '2020-03-01') %>% 
+  ggplot(aes(x = Date, y = max, fill = Season)) +
+  geom_col() +
+  #facet_wrap(~Season) +
+  labs(x = NULL, y = "Total Monthly Entries", title = "Monthly Subway Entries by Season")
+```
+
+To understand if there is a trend of subway use based on season, we created a plot that depicted the total number of monthly subway station entries colored by season. This graph indicates subway patterns prior to the start of the COVID-19 pandemic to analyze pre-existing trends before the change to the 'new normal'. Based on this graph, it is evident that monthly subway entries are highest during the Fall and Spring months and lower during the Summer and Winter months. This reduced use of the subway during the Summer months could be indicative of better weather prompting people to walk or bike in the city as well as subway route closure due to inclement weather during the Winter months. However, more analysis would need to be done to determine the route cause of this trend. Furthermore, COVID-19 has created a new environment for residents and commuters on how they interact with the subway so it is evident that NYC takes the necessary steps to bring the city back to these trend levels and increases current use of the subway.
+
+\newpage
+```{r}
+#map of entries by stop by year (size dictates amount of entry) with top 7 entrance stations highlighted
+stop_entries_count <- function() {
+  subway_traffic %>% 
+    mutate(Date = date(as.Date(Datetime)), Year = year(Date)) %>% 
+    group_by(`Remote Unit`, Year) %>% 
+    mutate(Tot_Entries = sum(Entries)) %>% 
+    #summarize(Year, `Stop Name`, Tot_Entries, Longitude, Latitude) %>% 
+    distinct(`Stop Name`, `Remote Unit`, Year, Tot_Entries, Longitude, Latitude) %>%
+    #arrange(-Tot_Entries) %>% 
+    #filter(`Remote Unit` == "R170") %>%
+    filter(row_number() == 1) %>% 
+    ungroup(`Remote Unit`)
+}
+
+stop_entries_dataset <- function(input_year) {
+  tot_stop_entries_2 <- stop_entries_count() %>% 
+    st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>%
+    st_transform(crs = st_crs(nyc)) %>%  # st_crs() gets the crs from the object nyc
+    mutate(Max_Ent = max(Tot_Entries)) %>%
+    group_by(`Remote Unit`, Year) %>% 
+    mutate(Point_Size = Tot_Entries/(Max_Ent)) %>% 
+    arrange(-Point_Size) %>%
+    filter(Year == input_year) %>% 
+    ungroup()
+}
+
+ stop_entries_map <- function (input_year) {
+  input_data <- stop_entries_dataset(input_year)
+  top_7_geom <- input_data %>% 
+    head(7)
+  top_7_geom
+
+  input_data %>% 
+  ggplot() + 
+  geom_sf(data = nyc) +
+  geom_sf(aes(size = Point_Size, alpha = Point_Size)) + #, color = ifelse(tot_stop_entries_2$Point_Size >= point_size_7, tot_stop_entries_2$`Stop Name`, "Other"))) +
+  geom_sf(data = top_7_geom, aes(size = Point_Size, alpha = Point_Size, color = `Stop Name`)) + #overlay original data with top 7 so it displays more clearly
+  scale_x_continuous(breaks = seq(-74.05, -73.70, 0.1)) +
+  labs(x = "Longitude", y = "Latitude", color = "Stop Name", title = glue("Subway Station Entrance Frequency in {input_year}")) +
+  guides(size = "none", alpha = "none")
+ } 
+ 
+ stop_entries_table7 <- function(input_year) {
+  input_data <- stop_entries_dataset(input_year)
+  input_data %>%
+    head(7) %>%
+    arrange(-Point_Size) %>%
+    st_set_geometry(., NULL) %>%
+    select(`Stop Name`, Tot_Entries) %>%
+    kable(format = "pipe",
+      padding = 10,
+      caption = paste('Most Entered Subway Stations in', input_data$Year[1]),
+      digits = 2,
+      col.names = c('Stop Name', 'Total Entries'),#, glue('Total Entries in {input_year}')),
+      align = c('l', 'c'))
+ }
+ 
+years <- c(2017,2018,2019,2020,2021)
+ 
+map(years, stop_entries_map) %>% 
+  walk(print)
+
+#for the kable formatted tables to be displayed
+stop_entries_table7(2017)
+stop_entries_table7(2018)
+stop_entries_table7(2019)
+stop_entries_table7(2020)
+stop_entries_table7(2021)
+                 
+
+```
+This map indicates the number of annual entries per stop. The amount of annual entries per stop is indicated equally by the size and transparency of the point, i.e. the less transparent and larger the point is, the greater the number of annual stops are. To that, the map highlights the seven most entered stops for each year with a table below indicating the exact amounts. Based on the graph, it is evident that Union Sq is the most entered subway station in the first four years. To that, additional interesting patterns emerge that speak to how residents and commuters interact with the subway. Specifically, a majority of the most entered subway spots were located in southern Manhattan and Midtown. In addition, Penn Station is one of the biggest hubs for commuters to enter the city to it is interesting to see that it was the second most entered subway spot in 2020 and most entered in 2021. Penn Station only reached its peak of entrances after the COVID-19 pandemic. Unlike Penn Station, Grand Central, the other large commuter hub, remained in the top seven prior to the COVID-19 pandemic and has since not seen as much demand. Overall, Union Sq, Columbus Circle, Herald Sq and Penn Station have all remained in the top seven most entered subway stations throughout the past five years. 
+
+\newpage
+## Next, we try to see if there is a correlation between number of connecting lines and total entries in a year (by stop). Perhaps stops with more connecting lines will have more entries.
+
+
+```{r}
+#Number of connecting lines per stop
+tot_connect_lines <- subway_traffic %>% #finds number of connecting lines per stop
+  group_by(`Remote Unit`) %>% 
+  select(`Remote Unit`, `Connecting Lines`) %>% 
+  mutate(Num_Connect_Lines = str_length(`Connecting Lines`)) %>% 
+  ungroup() %>% 
+  distinct(`Remote Unit`, `Connecting Lines`, Num_Connect_Lines)
+
+entries_lines_data <- inner_join(stop_entries_count(), tot_connect_lines, by = "Remote Unit") %>% 
+  group_by(`Remote Unit`, Year)
+
+
+```
+
+```{r}
+#Linear regression to see if there is a correlation between number of connecting lines and total entries (by stop)
+
+entries_lines_data %>% 
+  ggplot(aes(x = Num_Connect_Lines, y = Tot_Entries)) +
+  geom_point(size = 0.1) +
+  geom_smooth(method = "lm") +
+  labs(x = "Number of Connecting Lines", y = "Total Entries",
+       title = "Number of Connecting Lines vs Total Entries by Station") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+```{r, include=FALSE}
+lm_entries_lines <- lm(Tot_Entries ~ Num_Connect_Lines, data = entries_lines_data)
+summary(lm_entries_lines)
+
+```
+
+Here, our scatterplot and line of best fit indicate a positive relationship
+between number of connecting lines at an individual subway station and total
+entries at that station. Number of connecting lines is a statistically
+significant predictor, with significance of < 2e-16. Furthermore we obtain an
+R^2 value of 0.2837, which is fairly large. This means that 28.37% of the
+variation in total number of entries at a given
+subway stop can be explained by the linear relationship with number of
+connecting lines at an individual subway stop. Our point estimate for slope
+is 1143879, meaning that on average for each additional connecting line,
+entries in a year at an individual subway station increase by 1,143,879.
+
+\newpage
+## We identified neighborhoods with specific demographic and behavioral patterns. 
+
+```{r}
+#Top 10 neighborhoods with the highest percentage of people born in NY State
+neighborhood_census %>% 
+  slice_max(order_by = `Born in New York State`, n = 10) %>% 
+  ggplot(aes(x = `Born in New York State`, 
+             y = fct_reorder(Neighborhood, `Born in New York State`), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Percent Born in New York State", y = NULL, title = "Neighborhoods
+       With Highest Percentage of People Born in NY State") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+These are the top 10 neighborhoods in NYC with the greatest percentage of their 
+populations being born in NY State. If NYC wants to open convenience stores
+outside of subway stations, they could try to cater the convenience stores to
+more "local" people in neighborhoods with a larger percentage of people born in
+New York State. 
+
+```{r}
+#Top 10 neighborhoods with the lowest percentage of people born in NY State
+neighborhood_census %>% 
+  slice_min(order_by = `Born in New York State`, n = 10) %>% 
+  ggplot(aes(x = `Born in New York State`, 
+             y = fct_reorder(Neighborhood, -`Born in New York State`), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Percent Born in New York State", y = NULL, title = "Neighborhoods
+       With Lowest Percentage of People Born in NY State") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+These are the top 10 neighborhoods in NYC with the smallest percentage of their 
+populations being born in NY State. In neighborhoods with small proportions of
+the population being born in NY State, NYC could try to stock convenience
+stores outside of these subway stations with a range of items that are popular
+in other regions.
+
+```{r}
+#Top 10 neighborhoods with the largest foreign-born populations
+neighborhood_census %>% 
+  slice_max(order_by = `Foreign-born population`, n = 10) %>% 
+  ggplot(aes(x = `Foreign-born population`, 
+             y = fct_reorder(Neighborhood, `Foreign-born population`), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Percent Foreign-Born Population", y = NULL, title = "Neighborhoods
+       With Highest Percentage of Foreign-Born Population") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+These are the top 10 neighborhoods with the larges foreign-born populations. 
+In neighborhoods with large proportions of
+the population being foreign-born, NYC could try to stock convenience
+stores outside of these subway stations with items that are more international.
+
+```{r}
+#Top 10 neighborhoods with most car-free commute
+neighborhood_census %>% 
+  slice_max(order_by = `Car-free commute (% of commuters)`, n = 10) %>% 
+  ggplot(aes(x = `Car-free commute (% of commuters)`, 
+             y = fct_reorder(Neighborhood, `Car-free commute (% of commuters)`), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Percent of Commuters with a Car-Free Commute", y = NULL, title = "Neighborhoods
+       With Highest % of Commuters with a Car-Free Commute") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+These are the ten neighborhoods with the largest percentage of car-free 
+commutes. Residents of these neighborhoods may be more likely to utilize the
+subway. NYC should conduct further research to determine what these residents
+would be interested in purchasing in potential convenience stores outside
+of subway stations.
+
+```{r}
+#Top 10 neighborhoods with least car-free commute
+neighborhood_census %>% 
+  slice_min(order_by = `Car-free commute (% of commuters)`, n = 10) %>% 
+  ggplot(aes(x = `Car-free commute (% of commuters)`, 
+             y = fct_reorder(Neighborhood, -`Car-free commute (% of commuters)`), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Percent of Commuters with a Car-Free Commute", y = NULL, title = "Neighborhoods
+       With Lowest % of Commuters with a Car-Free Commute") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+These are the ten neighborhoods with the smallest percentage of car-free 
+commutes. Perhaps NYC should not place convenience stores in subway stations
+located in these neighborhoods since those who commute to work in a car are
+less likely to utilize the subway.
+
+\newpage
+## While we manually identified the top 10 neighborhoods based on different demographic patterns, we created a function to increase efficiency.
+```{r}
+#Creating a function that lets you see the top 10 neighborhoods for any given 
+#category
+
+top_10_2 <- function(col_name) {
+  col_name <- as.name(col_name)
+  col_name
+  new <- neighborhood_census %>% 
+    select(Neighborhood, col_name)
+  
+  new %>% 
+    arrange(-new[2]) %>% 
+    head(10) %>% 
+    kable(format = "pipe",
+      padding = 10,
+      caption = glue('Top Ten Neighborhoods in {col_name}'),
+      digits = 2,
+      col.names = c('Neighborhood', col_name),
+      align = c('l', 'c'))
+}
+
+top_10_2("Population")
+top_10_2("Population aged 65+")
+top_10_2("Poverty rate")
+top_10_2("Population density (1,000 persons per square mile)")
+top_10_2("Median household income (2018$)")
+top_10_2("Mean travel time to work (minutes)") 
+#^Longer travel, more likely to buy food
+
+top_10_2("Percent Asian")
+top_10_2("Percent Hispanic")
+top_10_2("Percent white")
+top_10_2("Percent black")
+
+
+top_10_2("Disabled population")
+```
+The above tables display some of the information which may help the city
+determine what types of convenience stores should be placed outside of
+different subway stations. 
+
+\newpage
+## In the following section, we looked at how different factors impact percentage of neighborhood residents with a car-free commute (likely related) to subway usage. 
+
+### Does median household income of a neighborhood predict percentage with a car-free commute?
+```{r}
+#Predicting car free commute by income
+neighborhood_census %>% 
+  ggplot(aes(x = `Median household income (2018$)`, 
+             y = `Car-free commute (% of commuters)`)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE) +
+  labs(title = "Median Household Income vs % with Car-Free Commute by
+  Neighborhood") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+The scatterplot shows that median household income is not a good
+predictor of percentage of commuters with a car-free commute. When looking at the details
+of the model, median household income is not a statistically 
+significant predictor using a significance level of .05 (.632 > .05). 
+
+```{r, include = FALSE}
+model_no_car <- lm(neighborhood_census$`Car-free commute (% of commuters)` 
+                   ~ neighborhood_census$`Median household income (2018$)`)
+summary(model_no_car)
+```
+
+\newpage
+## We found the median subway entries and exits, difference between entries and exits, and the ratio of entries over exits of each neighborhood to see whether some neighborhoods have higher subway traffic as well as different entries to exits ratios.
+```{r}
+#Adding borough to the neighborhood census data frame and entries and exits
+#NOTE: This removes 8 neighborhoods though
+entry_exit_neighborhood <- subway_traffic %>% 
+  group_by(Neighborhood) %>% 
+  summarize(median(Entries), median(Exits), Borough) %>% 
+  distinct(Neighborhood, .keep_all = TRUE) %>% 
+  mutate(BoroName = ifelse(Borough == "Q", "Queens",
+                    ifelse(Borough == "M", "Manhattan",
+                    ifelse(Borough == "Bk", "Brooklyn",
+                    ifelse(Borough == "Bx", "Bronx",NA)))))
+
+#Adding variables of entries_minus_exits and entries_over_exits + cleaning
+census_entry_exit <- 
+  inner_join(neighborhood_census, entry_exit_neighborhood) %>%
+  relocate(BoroName, .before = `Born in New York State`) %>% 
+  relocate(`median(Entries)`, .before = `Born in New York State`) %>% 
+  relocate(`median(Exits)`, .before = `Born in New York State`) %>% 
+  mutate(entries_minus_exits = (`median(Entries)` - `median(Exits)`)) %>% 
+  mutate(entries_over_exits = (`median(Entries)`/`median(Exits)`)) %>% 
+  relocate(entries_minus_exits, .before = `Born in New York State`) %>% 
+  relocate(entries_over_exits, .before = `Born in New York State`)
+```
+
+## Here, we try to predict median subway entries with demographic data, including household income, median rent, both household income and median rent, neighborhood population, and all three variables. 
+```{r}
+#Predicting entries by household income
+census_entry_exit %>% 
+  ggplot(aes(x = `Median household income (2018$)`, 
+             y = `median(Entries)`)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE) +
+  labs(y = "Median Subway Entries", title = "Median Household Income vs Median Subway Entries by
+       Neighborhood") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, include = FALSE}
+#Predicting entries by household income
+lm_entry_income <- lm(census_entry_exit$`median(Entries)` 
+                      ~ census_entry_exit$`Median household income (2018$)`)
+summary(lm_entry_income)
+```
+
+Household income by neighborhood is not a good predictor of median subway
+entries by neighborhood as seen by the scatterplot. The linear model shows
+an R^2 of .00568 and an insignificant predictor (p = .5992).
+
+```{r}
+#Predicting entries by median rent
+census_entry_exit %>% 
+  ggplot(aes(x = `Median rent, all (2018$)`, 
+             y = `median(Entries)`)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE) +
+  labs(y = "Median Subway Entries", title = "Median Rent vs Median Subway Entries by
+       Neighborhood") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r, include = FALSE}
+#Predicting entries by median rent
+lm_entry_rent <- lm(census_entry_exit$`median(Entries)` 
+                    ~ census_entry_exit$`Median rent, all (2018$)`)
+summary(lm_entry_rent)
+```
+
+
+Median rent by neighborhood is not a good predictor of median subway
+entries by neighborhood as seen by the scatterplot. The linear model shows
+an R^2 of .020279 and an insignificant predictor (p = .3127).
+
+```{r, include=FALSE}                    
+#Predicting entries by both median rent and median household income
+lm_entry_both <- lm(census_entry_exit$`median(Entries)` 
+                    ~ census_entry_exit$`Median rent, all (2018$)` 
+                    + census_entry_exit$`Median household income (2018$)`)
+summary(lm_entry_both)
+```
+
+When running a multiple regression with both median rent and median household
+income by neighborhood as predictors, our model is still insignificant. The 
+p-value for a F-Test is .3207.
+
+```{r}
+#Scatterplot to demonstrate neighborhood population is a strong predictor of
+#subway entries
+census_entry_exit %>% 
+  ggplot(aes(x = Population, y = `median(Entries)`)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE) +
+  labs(x = "Neighborhood Population", y = "Median Entries",
+  title = "Neighborhood Population vs Median Subway Entries by
+       Neighborhood") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r, include=FALSE}
+#Predicting entries by neighborhood population
+lm_entry_pop <- lm(census_entry_exit$`median(Entries)` 
+                   ~ census_entry_exit$Population)
+summary(lm_entry_pop)
+```
+
+Lastly, we then tried using neighborhood population as a predictor for median
+subway entries by neighborhood. The scatterplot shows a more consistent
+relationship. As neighborhood population increases, so do median entries. 
+We created a linear model and got a fairly large R-Squared value of 0.2773,
+and neighborhood population was a significant predictor (p = 7.2e-05). We got
+a point estimate for the slope of .01167. On average, for each additional
+person in the neighborhood, median entries increases by .01167. 
+
+```{r, include=FALSE}
+#Predicting by all three
+lm_entry_three <- lm(census_entry_exit$`median(Entries)` 
+                     ~ census_entry_exit$`Median rent, all (2018$)` 
+                     + census_entry_exit$`Median household income (2018$)` 
+                     + census_entry_exit$Population)
+summary(lm_entry_three)
+```
+
+Out of curiosity, we then tried doing a multiple regression with all three
+predictors to see if median rent or median income would become significant
+predictors. At an alpha level of .05, they remained insignificant. 
+
+\newpage
+## Instead of predicting for subway entries, we predicted for subway exits. We sticked with neighborhood population as the predictor since it is a significant predictor for entries. 
+
+```{r}
+#Predicting exits by neighborhood population
+census_entry_exit %>% 
+  ggplot(aes(x = Population, y = `median(Exits)`)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE) +
+  labs(x = "Neighborhood Population", y = "Median Entries", title = "Neighborhood Population vs Median Subway Exits by
+       Neighborhood")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, include = FALSE}
+#Predicting exits by neighborhood population
+lm_exit_pop <- lm(census_entry_exit$`median(Exits)` 
+                  ~ census_entry_exit$Population)
+
+summary(lm_exit_pop)
+```
+Again, we found that neighborhood population is a very significant predictor 
+for exits. As neighborhood population increases, median number of exits
+by neighborhood increases. We got R^2 = .2456 and a point estimate for the
+slope of .009213. On average, for each additional person in the neighborhood,
+median exits increases by .009213. 
+
+\newpage
+
+```{r, include=FALSE}
+sum(subway_traffic$Entries)
+sum(subway_traffic$Exits)
+```
+
+## Interestingly, some neighborhoods have a much different number of entries than exits. We wonder what could be contributing to this. We hypothesize that this is because there are two ways to exit the subway. One can exit via the turnstile or the emergency door, which is sometimes used as a normal exit. Our data only accounts for the turnstiles. There are approximately 5.60 billion entries, compared to 4.46 billion exits, showing about a 25% discrepancy.  Since neighborhoods with larger populations would naturally have a greater difference between the median entries and exits, we focused on ratio of entries/exits.
+
+```{r}
+#Top 10 neighborhoods with largest ratios
+census_entry_exit %>% 
+  slice_max(order_by = entries_over_exits, n = 10) %>% 
+  ggplot(aes(x = entries_over_exits, 
+             y = fct_reorder(Neighborhood, entries_over_exits), 
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Entries/Exits", y = NULL, title = "Top 10 Neighborhoods with
+  Greatest Ratio of Entries/Exits") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#Top 10 neighborhoods with smallest ratios
+census_entry_exit %>% 
+  slice_min(order_by = entries_over_exits, n = 10) %>% 
+  ggplot(aes(x = entries_over_exits, 
+             y = fct_reorder(Neighborhood, -entries_over_exits),
+             fill = Neighborhood)) +
+  geom_col() +
+  guides(fill = "none") +
+  labs(x = "Entries/Exits", y = NULL, title = "Top 10 Neighborhoods with
+  Smallest Ratio of Entries/Exits") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+Here are the ten neighborhoods with the largest ratios of entries/exits and 
+the ten neighborhoods with the smallest ratios of entries/exits. As seen in 
+the second horizontal bar chart (smallest ratios), only five neighborhoods 
+have a ratio less than 1. Due to the discrepancy in entries and exits,
+we will focus the rest of our subway analyses only on entries.
+
+
+\newpage
+## Due to the pandemic, subway traffic has drastically declined. In this section, we present COVID metrics patterns by borough first then see how COVID has impacted subway traffic. 
+
+```{r}
+#Daily Case Count by Borough
+covid_by_boro_cases <- covid_by_boro %>% 
+  mutate(Date = mdy(DATE_OF_INTEREST)) %>% 
+  select(Date, BX_CASE_COUNT, BK_CASE_COUNT, MN_CASE_COUNT, QN_CASE_COUNT, 
+         SI_CASE_COUNT) %>% 
+  pivot_longer(c(BX_CASE_COUNT, BK_CASE_COUNT, MN_CASE_COUNT, QN_CASE_COUNT, 
+                 SI_CASE_COUNT), names_to = "Borough", 
+               values_to = "Daily Cases") %>% 
+  mutate(BoroName = ifelse(Borough == "QN_CASE_COUNT", "Queens",
+                    ifelse(Borough == "MN_CASE_COUNT", "Manhattan",
+                    ifelse(Borough == "BK_CASE_COUNT", "Brooklyn",
+                    ifelse(Borough == "BX_CASE_COUNT", "Bronx", NA)))))
+
+covid_by_boro_cases %>% 
+  ggplot(aes(x = Date, y = `Daily Cases`, color = BoroName)) +
+  geom_smooth()+
+  labs(x = "Date (2/29/20 - 5/10/22)", y = "Daily Case Count", title = "Daily 
+       COVID Cases") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The graph above displays trends in number of daily COVID cases by borough.
+
+
+```{r}
+#Daily Hospitalizations by Borough
+covid_by_boro_hospitalizations <- covid_by_boro %>% 
+  mutate(Date = mdy(DATE_OF_INTEREST)) %>% 
+  select(Date, BX_HOSPITALIZED_COUNT, BK_HOSPITALIZED_COUNT, MN_HOSPITALIZED_COUNT, QN_HOSPITALIZED_COUNT, SI_HOSPITALIZED_COUNT) %>% 
+  pivot_longer(c(BX_HOSPITALIZED_COUNT,  BK_HOSPITALIZED_COUNT, MN_HOSPITALIZED_COUNT, QN_HOSPITALIZED_COUNT, SI_HOSPITALIZED_COUNT), names_to = "Borough", values_to = "Daily Hospitalizations") %>% 
+  mutate(BoroName = ifelse(Borough == "QN_HOSPITALIZED_COUNT", "Queens",
+                    ifelse(Borough == "MN_HOSPITALIZED_COUNT", "Manhattan",
+                    ifelse(Borough == "BK_HOSPITALIZED_COUNT", "Brooklyn",
+                    ifelse(Borough == "BX_HOSPITALIZED_COUNT", "Bronx",
+                    ifelse(Borough == "SI_HOSPITALIZED_COUNT", "Staten Island", NA))))))
+
+covid_by_boro_hospitalizations %>% 
+  ggplot(aes(x = Date, y = `Daily Hospitalizations`, color = BoroName)) +
+  geom_smooth()+
+  labs(x = "Date (2/29/20 - 5/10/22)", y = "Daily COVID Hospitalizations",
+       title = "Daily COVID Hospitalizations") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The graph above displays trends in number of daily hospitalizations due to
+COVID by borough.
+
+
+```{r}
+#COVID Deaths by Borough
+covid_by_boro_deaths <- covid_by_boro %>% 
+  mutate(Date = mdy(DATE_OF_INTEREST)) %>% 
+  select(Date, BX_DEATH_COUNT, BK_DEATH_COUNT, MN_DEATH_COUNT, QN_DEATH_COUNT, SI_DEATH_COUNT) %>% 
+  pivot_longer(c(BX_DEATH_COUNT, BK_DEATH_COUNT, MN_DEATH_COUNT, QN_DEATH_COUNT, SI_DEATH_COUNT), names_to = "Borough", values_to = "Daily Deaths") %>% 
+  mutate(BoroName = ifelse(Borough == "QN_DEATH_COUNT", "Queens",
+                    ifelse(Borough == "MN_DEATH_COUNT", "Manhattan",
+                    ifelse(Borough == "BK_DEATH_COUNT", "Brooklyn",
+                    ifelse(Borough == "BX_DEATH_COUNT", "Bronx",
+                    ifelse(Borough == "SI_DEATH_COUNT", "Staten Island", NA))))))
+
+covid_by_boro_deaths %>% 
+  ggplot(aes(x = Date, y = `Daily Deaths`, color = BoroName)) +
+  geom_smooth()+
+  labs(x = "Date (2/29/20 - 5/10/22)", y = "Daily COVID Deaths", title = "Daily COVID Deaths") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The graph above displays trends in number of daily COVID deaths by borough.
+
+\newpage
+
+## Here, we visualized the change in subway station entries before and after COVID.
+```{r}
+#Visualizing the change in subway station entries before and after Covid
+
+#Sum of subway station entries by day
+subway_daily_traffic <- subway_traffic %>% 
+  mutate(BoroName = ifelse(Borough == "Q", "Queens",
+                    ifelse(Borough == "M", "Manhattan",
+                    ifelse(Borough == "Bk", "Brooklyn",
+                    ifelse(Borough == "Bx", "Bronx",
+                    ifelse(Borough == "SI", "Staten Island", NA)))))) %>% 
+  mutate(Date = date(as.Date(Datetime))) %>% 
+  group_by(Date) %>% 
+  summarize(Daily_Subway_Entries = sum(Entries))
+
+#Covid cases in NYC by day
+covid_cases <- covid_by_boro %>%
+  mutate(DATE_OF_INTEREST = as.Date(mdy(DATE_OF_INTEREST))) %>% 
+  rename(Date = DATE_OF_INTEREST) %>%
+  rename(Covid_Cases = CASE_COUNT) %>% 
+  select(Date, Covid_Cases)
+  
+#joining the subway_entries data  with covid cases
+subway_daily_traffic_covid <- left_join(subway_daily_traffic, covid_cases, by = "Date") %>% 
+  pivot_longer(-Date, names_to = "Type", values_to = "Count")
+
+#graphing daily subway traffic in relation to covid cases
+subway_daily_traffic_covid %>%
+  filter(Date >= "2019-06-01") %>% 
+  ggplot(aes(x = Date, y = Count)) +
+  geom_line() +
+  geom_smooth() +
+  labs(x = "Time", y = "Count", title = "Trends in Daily NYC Subway Entries Relative to COVID-19 Cases") +
+  facet_wrap(vars(Type), scales = "free_y", ncol = 1)
+```
+Before the COVID pandemic, we could see that total daily subway entries across 
+all stations mostly remained above 2 million entries and could reach nearly 6
+million entries on some days. As COVID cases began to rise in March of 2020, we
+saw a sharp decline in subway entries to below 1 million entries. Since the 
+pandemic till July of 2021, subway entries have been increasing but not anywhere
+close to pre-pandemic levels.
+
+
+## Next, we try to see if there is a relationship between COVID cases and subway entries by borough. 
+## Note: There are no subway stations in Staten Island.
+
+```{r}
+#Looking for relationship between entries and COVID cases
+subway_traffic_covid <- subway_traffic %>% 
+  mutate(Date = date(as.Date(Datetime))) %>% 
+  group_by(Date, Borough) %>% 
+  mutate(Tot_Bor_Ent = sum(Entries)) %>% 
+  select(Date, Borough, Tot_Bor_Ent) %>% 
+  distinct(Date, Borough, Tot_Bor_Ent) %>% 
+  mutate(BoroName = ifelse(Borough == "Q", "Queens",
+                    ifelse(Borough == "M", "Manhattan",
+                    ifelse(Borough == "Bk", "Brooklyn",
+                    ifelse(Borough == "Bx", "Bronx",
+                    ifelse(Borough == "SI", "Staten Island", NA)))))) %>% 
+  filter(Date >= ymd("2020-03-21")) %>% 
+  relocate(Date, .before = Borough) %>% 
+  ungroup(Borough) %>% 
+  select(Date, Tot_Bor_Ent, BoroName)
+
+
+traffic_covid_cases <- inner_join(subway_traffic_covid, covid_by_boro_cases, 
+                                  by = c("BoroName", "Date"))
+
+#Note: No subway stations on Staten Island
+
+traffic_covid_cases %>% 
+  filter(Tot_Bor_Ent <= 1000000) %>% 
+  ggplot(aes(x = `Daily Cases`, y = Tot_Bor_Ent, color = BoroName)) +
+  geom_point(size = 0.2) +
+  geom_smooth(method = "lm")+
+  labs(x = "Daily COVID Cases", y = "Total Subway Entries by Borough",
+       title = "Daily COVID Cases vs Total Subway Entries by Borough") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(vars(BoroName))
+```
+
+The scatterplots above show negative trends for the Bronx, Brooklyn, and
+Queens, indicating that as Daily COVID Cases in a borough increased,
+subway entries decreased. However, this relationship does not appear very
+strong. Perhaps this could be due to a lag time between COVID cases and impact
+on peoples' behaviors. Interestingly, the line of best fit for Manhattan 
+has a positive slope, showing that on average, as daily COVID cases increased,
+total subway entries in Manhattan also increased. We are not sure why this
+could be.
+
+\newpage
+# Using linear models
+## As we saw a drastic decline in subway entries since the COVID pandemic, we wondered whether we could use COVID cases to predict subway daily entries.
+```{r, include = FALSE}
+#OLS model to predict subway traffic (daily entries) with Covid Cases
+
+#Post-Covid Traffic
+post_covid_daily_traffic <- left_join(subway_daily_traffic, covid_cases) %>% 
+  filter(Date >= "2020-03-21")
+
+#Linear model to predict daily subway entries with covid cases
+covid_subway_daily_model <- lm(Daily_Subway_Entries ~ Covid_Cases, 
+                         data = post_covid_daily_traffic)
+
+summary(covid_subway_daily_model)
+```
+We found that daily covid cases is a very poor predictor of daily subway 
+entries as its p-value of 0.108 is greater than 0.05. Its R-suqared value is 
+also very small at 0.005067. This means that only 0.5% of the variation in 
+daily subway entries can be explained by the linear relationship with daily
+covid cases.
+
+## We speculated that maybe covid prevalence differed across boroughs, so we wrote a function that would predict subway entries with covid cases for each borough.
+```{r, include = FALSE}
+#Function to create a linear model by borough for predicting subway entries with
+#covid cases
+subway_covid_boro <- function(boro) {
+  linear <- traffic_covid_cases %>% 
+    filter(BoroName == boro) %>% 
+    select(-Borough) 
+  
+  lm(Tot_Bor_Ent ~ `Daily Cases`, data = linear)
+}
+
+boroughs <- c("Manhattan", "Brooklyn", "Bronx", "Queens")
+map(boroughs, subway_covid_boro)
+
+Manhattan_model <- subway_covid_boro("Manhattan")
+Brooklyn_model <- subway_covid_boro("Brooklyn")
+Bronx_model <- subway_covid_boro("Bronx")
+Queens_model <- subway_covid_boro("Queens")
+
+summary(Manhattan_model)
+summary(Brooklyn_model)
+summary(Bronx_model)
+summary(Queens_model)
+
+Subway_Entries_Covid_Borough <- data.frame(
+  Borough = boroughs,
+  Coefficients = c(-141.54, -40.97, -20.342,-38.721),
+  P_Values = c(0.0442,0.00588, 0.00855, 0.0000867),
+  R_squared = c(0.00762, 0.01423, 0.01297, 0.02868)
+)
+```
+
+```{r}
+Subway_Entries_Covid_Borough %>% 
+ kable(format = "pipe",
+      padding = 10,
+      caption = glue('Linear Models for Each Borough in Predicting Subway Entries with Covid Cases'),
+      col.names = c('Borough', 'Coefficients', 'P-Values', 'R-Squared'),
+      align = c('l', 'c'))
+```
+As shown in the table, all four linear models have p-values that are less than
+0.05, indicating that COVID cases is a significant predictor of subway traffic
+in each borough. However, it is important to note that the R-squared values are 
+all very small, ranging from 0.0076 (Manhattan) to 0.0287 (Queens). Take 
+Manhattan as an example. This means that only 0.76% of the variation in the 
+daily subway entries can be explained by the linear relationship with daily 
+covid cases. Even the best fitted model, Queens, can only explain 2.87% of the 
+variation in the daily subway entries with its linear model. Thus, there are
+probably many other factors that affect subway traffic than COVID ever since the pandemic started.
+
+
+
