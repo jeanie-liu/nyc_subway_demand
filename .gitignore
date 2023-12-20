@@ -1,3 +1,6 @@
 
 .Rhistory
 .DS_Store
+*.pper
+.Rproj.user/DC9AD8C3/rmd-outputs
+.Rproj.user/DC9AD8C3/saved_source_markers
