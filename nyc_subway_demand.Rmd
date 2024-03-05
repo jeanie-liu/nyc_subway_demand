@@ -1,7 +1,6 @@
 ---
 title: "Subway Insights: Demographics, COVID-19, and the Future of NYC Transit"
 author: "Jeanie Liu, Kazuma Parkinson, and Jonathan Gotian"
-date: "June 2022"
 output: pdf_document
 urlcolor: blue
 ---
