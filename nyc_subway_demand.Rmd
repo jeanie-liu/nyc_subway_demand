@@ -1,7 +1,7 @@
 ---
 title: "Subway Insights: Demographics, COVID-19, and the Future of NYC Transit"
-author: "Group 6: Jeanie Liu, Kazuma Parkinson, and Jonathan Gotian"
-date: "`r format(Sys.time(), '%B %d, %Y')`"
+author: "Jeanie Liu, Kazuma Parkinson, and Jonathan Gotian"
+date: "June 2022"
 output: pdf_document
 urlcolor: blue
 ---
