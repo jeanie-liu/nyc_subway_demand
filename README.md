@@ -6,11 +6,18 @@ Our project revolves around addressing the multifaceted concerns of the New York
 
 * **Predicting Future Subway Demand**: Anticipating future demand for the subway system is crucial for informed decision-making regarding infrastructure investments and repairs. Leveraging our analytical insights, we aimed to forecast subway demand and identify the stations deserving of prioritized attention from the city.
 
-* **Informing Strategic Investments**: In alignment with the city's broader goals, we explored the potential for revenue generation through the establishment of city-owned convenient stores adjacent to subway stations. Our analysis sought to determine the optimal types of stores to build and their strategic placement based on neighborhood characteristics and consumer preferences.
+* **Informing Strategic Investments**: In alignment with the city's broader goals, we explored the potential for revenue generation through the establishment of city-owned convenience stores adjacent to subway stations. Our analysis sought to determine the optimal types of stores to build and their strategic placement based on neighborhood characteristics and consumer preferences.
 
 ## Installation and Setup
 ### Prerequisites
 * **R** 4.1.2 or higher.
 * **RStudio** to run the .Rmd file. [Download RStudio](https://posit.co/downloads/).
 
-* 
+* **Required R Libraries/Packages**:
+* tidyverse: for data manipulation, analysis, and visualization.
+* lubridate: for parsing, manipulation, and arithmetic with date-time objects.
+* purrr: for applying map functions to elements of lists, vectors, or data frames.
+* sf:  for working with spatial data structures, such as reading and writing shapefiles.
+* glmnet: for implementing regularized regression methods, including ridge and lasso regression, for high-dimensional data
+* glue: for embedding R code within strings.
+* data.table: provides an enhanced version of data frames with additional functionality. 
