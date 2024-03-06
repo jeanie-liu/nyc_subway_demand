@@ -38,8 +38,10 @@ Once the repository is cloned, follow the instructions in the prerequisites sect
 ## Usage
 This project consists of one main R Markdown file and a final report pdf file:
 1. **Code for Analysis and Reporting (`nyc_subway_demand.Rmd`):**
-   - This file uses csv files and shapefiles from the `data` folder. To view or run the R Markdown file, open `nyc_subway_demand.Rmd` in RStudio.
-2. **Final Report (`nyc_subway_demand_final_report.pdf`):**
+   - Download the csv file `NYC_subway_traffic_2017-2021.csv` on [Kaggle](https://www.kaggle.com/datasets/eddeng/nyc-subway-traffic-data-20172021?resource=download&select=NYC_subway_traffic_2017-2021.csv). Log in or create an account if you don't have one since Kaggle requires an account for downloading data.
+   - Place the downloaded dataset in the `data` folder. All other csv files and shapefiles used are included in the `data` folder in the repository.
+   - To view or run the R Markdown file, open `nyc_subway_demand.Rmd` in RStudio.
+3. **Final Report (`nyc_subway_demand_final_report.pdf`):**
    - This is the knitted pdf output from running the R Markdown file.
 
 To work with the files:
