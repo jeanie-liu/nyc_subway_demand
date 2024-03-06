@@ -11,4 +11,6 @@ Our project revolves around addressing the multifaceted concerns of the New York
 ## Installation and Setup
 ### Prerequisites
 * **R** 4.1.2 or higher.
-* **RStudio**. [Download RStudio](https://posit.co/downloads/).
+* **RStudio** to run the .Rmd file. [Download RStudio](https://posit.co/downloads/).
+
+* 
