@@ -14,10 +14,10 @@ Our project revolves around addressing the multifaceted concerns of the New York
 * **RStudio** to run the .Rmd file. [Download RStudio](https://posit.co/downloads/).
 
 * **Required R Libraries/Packages**:
-* tidyverse: for data manipulation, analysis, and visualization.
-* lubridate: for parsing, manipulation, and arithmetic with date-time objects.
-* purrr: for applying map functions to elements of lists, vectors, or data frames.
-* sf:  for working with spatial data structures, such as reading and writing shapefiles.
-* glmnet: for implementing regularized regression methods, including ridge and lasso regression, for high-dimensional data
-* glue: for embedding R code within strings.
-* data.table: provides an enhanced version of data frames with additional functionality. 
+  * tidyverse: for data manipulation, analysis, and visualization.
+  * lubridate: for parsing, manipulation, and arithmetic with date-time objects.
+  * purrr: for applying map functions to elements of lists, vectors, or data frames.
+  * sf:  for working with spatial data structures, such as reading and writing shapefiles.
+  * glmnet: for implementing regularized regression methods, including ridge and lasso regression, for high-dimensional data
+  * glue: for embedding R code within strings.
+  * data.table: provides an enhanced version of data frames with additional functionality. 
