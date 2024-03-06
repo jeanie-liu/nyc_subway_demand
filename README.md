@@ -34,3 +34,19 @@ To get started with the project, you first need to clone the repository to your 
    cd nyc_subway_demand
    ```
 Once the repository is cloned, follow the instructions in the prerequisites section to install the necessary project dependencies.
+
+## Usage
+This project consists of one main R Markdown file and a final report pdf file:
+1. **Code for Analysis and Reporting (`nyc_subway_demand.Rmd`):**
+   - This file uses csv files and shapefiles from the `data` folder. To view or run the R Markdown file, open `nyc_subway_demand.Rmd` in RStudio.
+2. **Final Report (`nyc_subway_demand_final_report.pdf`):**
+   - This is the knitted pdf output from running the R Markdown file.
+
+To work with the files:
+   - You can either simply review the content and findings from the final report or run the cells to execute the code in the Markdown file.
+
+## Credits and Contact
+This project was developed by Jeanie Liu, Kazuma Parkinson, and Jonathan Gotian. For any queries regarding this project, please contact Jeanie Liu at hjeanieliu@gmail.com.
+
+This project is no longer actively maintained. The repository serves as an archive of the work done and the findings of the analysis.
+
