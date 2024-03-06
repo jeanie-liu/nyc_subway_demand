@@ -21,3 +21,16 @@ Our project revolves around addressing the multifaceted concerns of the New York
   * glmnet: for implementing regularized regression methods, including ridge and lasso regression, for high-dimensional data
   * glue: for embedding R code within strings.
   * data.table: provides an enhanced version of data frames with additional functionality. 
+
+### Cloning the Repository
+To get started with the project, you first need to clone the repository to your local machine. Follow these steps:
+1. **Open Your Terminal or Command Line:** This can be the Terminal app on macOS or Linux, Command Prompt or PowerShell on Windows, or any other terminal application you prefer.
+2. **Clone the Repository:** Run the following command.
+   ```bash
+   git clone https://github.com/jeanie-liu/nyc_subway_demand
+   ```
+3. **Navigate to the Project Directory:** After cloning, move into the project directory with this command:
+   ```bash
+   cd nyc_subway_demand
+   ```
+Once the repository is cloned, follow the instructions in the prerequisites section to install the necessary project dependencies.
